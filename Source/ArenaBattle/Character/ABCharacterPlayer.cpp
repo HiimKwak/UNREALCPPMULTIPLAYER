@@ -8,6 +8,7 @@
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "ABCharacterControlData.h"
+#include "ArenaBattle.h"
 #include "UI/ABHUDWidget.h"
 #include "CharacterStat/ABCharacterStatComponent.h"
 #include "Interface/ABGameInterface.h"
@@ -86,6 +87,31 @@ void AABCharacterPlayer::SetDead()
 	{
 		DisableInput(PlayerController);
 	}
+}
+
+void AABCharacterPlayer::PossessedBy(AController* NewController)
+{
+	AB_LOG(LogABNetwork, Log, TEXT("%s"), TEXT("Begin"));
+	AActor* OwnerActor = GetOwner();
+	if (OwnerActor)
+	{
+		AB_LOG(LogABNetwork, Log, TEXT("Owner Actor: %s"), *OwnerActor->GetName());
+	}
+	else
+	{
+		AB_LOG(LogABNetwork, Log, TEXT("No Owner Actor"));
+	}
+	Super::PossessedBy(NewController);
+	OwnerActor = GetOwner();
+	if (OwnerActor)
+	{
+		AB_LOG(LogABNetwork, Log, TEXT("Owner Actor: %s"), *OwnerActor->GetName());
+	}
+	else
+	{
+		AB_LOG(LogABNetwork, Log, TEXT("No Owner Actor"));
+	}
+	AB_LOG(LogABNetwork, Log, TEXT("%s"), TEXT("End"));
 }
 
 void AABCharacterPlayer::SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent)

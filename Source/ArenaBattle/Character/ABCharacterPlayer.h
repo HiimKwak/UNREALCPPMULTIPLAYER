@@ -22,7 +22,8 @@ public:
 protected:
 	virtual void BeginPlay() override;
 	virtual void SetDead() override;
-
+	virtual void PossessedBy(AController* NewController) override;
+	
 public:
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 

@@ -27,7 +27,7 @@ void AABPlayerController::PostInitializeComponents()
 
 void AABPlayerController::PostNetInit()
 {
-	AB_LOG(LogABNetwork, Log, TEXT("%s"), TEXT("Begin"));
+	AB_LOG(LogABNetwork, Log, TEXT("%s %s"), TEXT("Begin"), *GetName());
 	Super::PostNetInit();
 	UNetDriver* NetDriver = GetNetDriver();
 	if (NetDriver)
@@ -55,3 +55,11 @@ void AABPlayerController::BeginPlay()
 	FInputModeGameOnly GameOnlyInputMode;
 	SetInputMode(GameOnlyInputMode);
 }
+
+void AABPlayerController::OnPossess(APawn* InPawn)
+{
+	AB_LOG(LogABNetwork, Log, TEXT("%s"), TEXT("Begin"));
+	Super::OnPossess(InPawn);
+	AB_LOG(LogABNetwork, Log, TEXT("%s"), TEXT("End"));
+}
+
