@@ -35,15 +35,33 @@ AABFountain::AABFountain()
 	// 1. 액터의 리플리케이션 속성 켜주기
 	bReplicates = true;
 	
-	NetUpdateFrequency = 1.f; // 네트워크 전송 빈도 1초에 1번
+	SetNetUpdateFrequency(1.0f); // 네트워크 전송 빈도 1초에 1번
 	
-	NetCullDistanceSquared = 4000000.0f; // 거리 기반 연관성 판정에 사용할 거리 값 (20미터 제곱)
+	SetNetCullDistanceSquared(4000000.0f); // 거리 기반 연관성 판정에 사용할 거리 값 (20미터 제곱)
 }
 
 // Called when the game starts or when spawned
 void AABFountain::BeginPlay()
 {
 	Super::BeginPlay();
+	
+	if (HasAuthority())
+	{
+		FTimerHandle Handle;
+		GetWorld()->GetTimerManager().SetTimer(
+			Handle,
+			FTimerDelegate::CreateLambda(
+				[&]() {
+
+					// 큰 데이터 설정 ( 400 바이트 크기 )
+					BigData.Init(BigDataElement, 1000);
+
+					// 지속적인 전속을 위한 데이터 변경
+					BigDataElement += 1.0f;
+				}
+			), 1.0f, true
+		);
+	}
 }
 
 void AABFountain::GetLifetimeReplicatedProps(TArray<class FLifetimeProperty>& OutLifetimeProps) const
@@ -52,6 +70,8 @@ void AABFountain::GetLifetimeReplicatedProps(TArray<class FLifetimeProperty>& Ou
 	
 	// 3. 네트웍으로 복제할 속성 DOREPLIFETIME 매크로로 명시
 	DOREPLIFETIME(AABFountain, ServerRotationYaw);
+	// 데이터 전송 테스트를 위한 변수를 리플리케이션에 등록
+	DOREPLIFETIME(AABFountain, BigData);
 }
 
 void AABFountain::OnActorChannelOpen(class FInBunch& InBunch, class UNetConnection* Connection)
