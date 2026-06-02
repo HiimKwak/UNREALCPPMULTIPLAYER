@@ -36,6 +36,8 @@ AABFountain::AABFountain()
 	bReplicates = true;
 	
 	NetUpdateFrequency = 1.f; // 네트워크 전송 빈도 1초에 1번
+	
+	NetCullDistanceSquared = 4000000.0f; // 거리 기반 연관성 판정에 사용할 거리 값 (20미터 제곱)
 }
 
 // Called when the game starts or when spawned
@@ -56,6 +58,28 @@ void AABFountain::OnActorChannelOpen(class FInBunch& InBunch, class UNetConnecti
 {
 	Super::OnActorChannelOpen(InBunch, Connection);
 	
+}
+
+bool AABFountain::IsNetRelevantFor(
+	const AActor* RealViewer,
+	const AActor* ViewTarget,
+	const FVector& SrcLocation) const
+{
+	bool NetRelevantResult = Super::IsNetRelevantFor(RealViewer, ViewTarget, SrcLocation);
+
+	// 연관성이 없다고 판단된 경우에는 뷰어의 위치 출력
+	if (!NetRelevantResult)
+	{
+		AB_LOG(
+			LogABNetwork,
+			Log,
+			TEXT("Not Relevant: [%s] %s"),
+			*RealViewer->GetName(),
+			*SrcLocation.ToString()
+		);
+	}
+
+	return NetRelevantResult;
 }
 
 void AABFountain::OnRep_ServerRotationYaw()

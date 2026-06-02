@@ -20,6 +20,8 @@ protected:
 	virtual void BeginPlay() override;
 	virtual void GetLifetimeReplicatedProps(TArray<class FLifetimeProperty>& OutLifetimeProps) const override;
 	virtual void OnActorChannelOpen(class FInBunch& InBunch, class UNetConnection* Connection) override;
+	virtual bool IsNetRelevantFor(const AActor* RealViewer, const AActor* ViewTarget, const FVector& SrcLocation) const override;
+	
 	// 리플리케이션 콜백 함수는 UFUNCTION으로 등록돼야 넘어감
 	UFUNCTION()
 	void OnRep_ServerRotationYaw();
