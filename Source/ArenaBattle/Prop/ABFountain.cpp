@@ -4,6 +4,7 @@
 #include "Prop/ABFountain.h"
 
 #include "ArenaBattle.h"
+#include "Components/PointLightComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Net/UnrealNetwork.h"
 
@@ -38,6 +39,9 @@ AABFountain::AABFountain()
 	SetNetUpdateFrequency(1.0f); // 네트워크 전송 빈도 1초에 1번
 	
 	SetNetCullDistanceSquared(4000000.0f); // 거리 기반 연관성 판정에 사용할 거리 값 (20미터 제곱)
+	
+	NetDormancy = DORM_Initial; // 처음부터 잠들기 설정하면 네트워크 전송(리플리케이션)이 안됨
+	// 서버에서 재우는거기 때문에 클라이언트랑 상관없음.
 }
 
 // Called when the game starts or when spawned
@@ -52,14 +56,25 @@ void AABFountain::BeginPlay()
 			Handle,
 			FTimerDelegate::CreateLambda(
 				[&]() {
-
-					// 큰 데이터 설정 ( 400 바이트 크기 )
-					BigData.Init(BigDataElement, 1000);
-
-					// 지속적인 전속을 위한 데이터 변경
-					BigDataElement += 1.0f;
+					ServerLightColor = FLinearColor(
+					FMath::RandRange(0.0f, 1.0f),
+					FMath::RandRange(0.0f, 1.0f),
+					FMath::RandRange(0.0f, 1.0f),
+					1.0f
+					);
+					
+					OnRep_ServerLightColor();
 				}
 			), 1.0f, true
+		);
+		FTimerHandle Handle2;
+		GetWorld()->GetTimerManager().SetTimer(
+			Handle2,
+			FTimerDelegate::CreateLambda(
+				[&]() {
+					FlushNetDormancy();
+				}
+			), 5.0f, false
 		);
 	}
 }
@@ -70,8 +85,6 @@ void AABFountain::GetLifetimeReplicatedProps(TArray<class FLifetimeProperty>& Ou
 	
 	// 3. 네트웍으로 복제할 속성 DOREPLIFETIME 매크로로 명시
 	DOREPLIFETIME(AABFountain, ServerRotationYaw);
-	// 데이터 전송 테스트를 위한 변수를 리플리케이션에 등록
-	DOREPLIFETIME(AABFountain, BigData);
 }
 
 void AABFountain::OnActorChannelOpen(class FInBunch& InBunch, class UNetConnection* Connection)
@@ -114,6 +127,20 @@ void AABFountain::OnRep_ServerRotationYaw()
 
 	// 서버로부터 데이터를 받으면 0으로 초기화
 	ClientTimeSinceUpdate = 0.0f;
+}
+
+void AABFountain::OnRep_ServerLightColor()
+{
+	if (HasAuthority())
+	{
+		AB_LOG(LogABNetwork, Log, TEXT("ServerLightColor: %s"), *ServerLightColor.ToString());
+	}
+
+	// 서버-클라이언트 모두에서 실행
+	if (UPointLightComponent* PointLight = GetComponentByClass<UPointLightComponent>())
+	{
+		PointLight->SetLightColor(ServerLightColor);
+	}
 }
 
 // Called every frame
