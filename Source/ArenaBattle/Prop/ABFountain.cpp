@@ -40,7 +40,7 @@ AABFountain::AABFountain()
 	
 	SetNetCullDistanceSquared(4000000.0f); // 거리 기반 연관성 판정에 사용할 거리 값 (20미터 제곱)
 	
-	NetDormancy = DORM_Initial; // 처음부터 잠들기 설정하면 네트워크 전송(리플리케이션)이 안됨
+	// NetDormancy = DORM_Initial; // 처음부터 잠들기 설정하면 네트워크 전송(리플리케이션)이 안됨
 	// 서버에서 재우는거기 때문에 클라이언트랑 상관없음.
 }
 
@@ -72,7 +72,7 @@ void AABFountain::BeginPlay()
 			Handle2,
 			FTimerDelegate::CreateLambda(
 				[&]() {
-					FlushNetDormancy();
+					// FlushNetDormancy();
 				}
 			), 5.0f, false
 		);
@@ -113,6 +113,14 @@ bool AABFountain::IsNetRelevantFor(
 	}
 
 	return NetRelevantResult;
+}
+
+void AABFountain::PreReplication(
+	IRepChangedPropertyTracker& ChangedPropertyTracker)
+{
+	AB_LOG(LogABNetwork, Log, TEXT("%s"), TEXT("Begin"));
+
+	Super::PreReplication(ChangedPropertyTracker);
 }
 
 void AABFountain::OnRep_ServerRotationYaw()
