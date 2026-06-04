@@ -19,15 +19,6 @@ protected:
 	// Called when the game starts or when spawned
 	virtual void BeginPlay() override;
 	virtual void GetLifetimeReplicatedProps(TArray<class FLifetimeProperty>& OutLifetimeProps) const override;
-	virtual void OnActorChannelOpen(class FInBunch& InBunch, class UNetConnection* Connection) override;
-	virtual bool IsNetRelevantFor(const AActor* RealViewer, const AActor* ViewTarget, const FVector& SrcLocation) const override;
-	
-	void SetNetCullDistance(float NewNetCullDistance);
-	
-	// 리플리케이션이 처리되기 바로 직전에 호출되는 함수
-	// 서버에서만 호출됨.
-	virtual void PreReplication(
-		IRepChangedPropertyTracker& ChangedPropertyTracker) override;
 	
 	// 리플리케이션 콜백 함수는 UFUNCTION으로 등록돼야 넘어감
 	UFUNCTION()
@@ -38,8 +29,11 @@ protected:
 	UFUNCTION(NetMulticast, Unreliable)
 	void MulticastRPCChangeLightColor(const FLinearColor& NewLightColor);
 	
-	UFUNCTION(Server, Unreliable)
+	UFUNCTION(Server, Unreliable, WithValidation)
 	void ServerRPCChangeLightColor();
+	
+	UFUNCTION(Client, Unreliable)
+	void ClientRPCChangeLightColor(const FLinearColor& NewLightColor);
 	
 	// 2. 네트웍으로 복제할 액터의 속성 키워드로 지정
 	UPROPERTY(ReplicatedUsing = OnRep_ServerRotationYaw)
