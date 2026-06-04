@@ -56,14 +56,14 @@ void AABFountain::BeginPlay()
 			Handle,
 			FTimerDelegate::CreateLambda(
 				[&]() {
-					ServerLightColor = FLinearColor(
+					const FLinearColor NewLightColor = FLinearColor(
 					FMath::RandRange(0.0f, 1.0f),
 					FMath::RandRange(0.0f, 1.0f),
 					FMath::RandRange(0.0f, 1.0f),
 					1.0f
 					);
 					
-					OnRep_ServerLightColor();
+					MulticastRPCChangeLightColor(NewLightColor);
 				}
 			), 1.0f, true
 		);
@@ -148,6 +148,15 @@ void AABFountain::OnRep_ServerLightColor()
 	if (UPointLightComponent* PointLight = GetComponentByClass<UPointLightComponent>())
 	{
 		PointLight->SetLightColor(ServerLightColor);
+	}
+}
+
+void AABFountain::MulticastRPCChangeLightColor_Implementation(const FLinearColor& NewLightColor)
+{
+	AB_LOG(LogABNetwork, Log, TEXT("Changed LightColor: %s"), *NewLightColor.ToString());
+	if (UPointLightComponent* PointLight = GetComponentByClass<UPointLightComponent>())
+	{
+		PointLight->SetLightColor(NewLightColor);
 	}
 }
 

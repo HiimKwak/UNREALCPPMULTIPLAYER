@@ -35,6 +35,9 @@ protected:
 	UFUNCTION()
 	void OnRep_ServerLightColor();
 	
+	UFUNCTION(NetMulticast, Unreliable)
+	void MulticastRPCChangeLightColor(const FLinearColor& NewLightColor);
+	
 	// 2. 네트웍으로 복제할 액터의 속성 키워드로 지정
 	UPROPERTY(ReplicatedUsing = OnRep_ServerRotationYaw)
 	float ServerRotationYaw;
