@@ -49,6 +49,7 @@ void AABFountain::BeginPlay()
 {
 	Super::BeginPlay();
 	
+	// 서버 코드
 	if (HasAuthority())
 	{
 		FTimerHandle Handle;
@@ -56,14 +57,14 @@ void AABFountain::BeginPlay()
 			Handle,
 			FTimerDelegate::CreateLambda(
 				[&]() {
-					const FLinearColor NewLightColor = FLinearColor(
-					FMath::RandRange(0.0f, 1.0f),
-					FMath::RandRange(0.0f, 1.0f),
-					FMath::RandRange(0.0f, 1.0f),
-					1.0f
-					);
-					
-					MulticastRPCChangeLightColor(NewLightColor);
+					// const FLinearColor NewLightColor = FLinearColor(
+					// FMath::RandRange(0.0f, 1.0f),
+					// FMath::RandRange(0.0f, 1.0f),
+					// FMath::RandRange(0.0f, 1.0f),
+					// 1.0f
+					// );
+					//
+					// MulticastRPCChangeLightColor(NewLightColor);
 				}
 			), 1.0f, true
 		);
@@ -72,9 +73,34 @@ void AABFountain::BeginPlay()
 			Handle2,
 			FTimerDelegate::CreateLambda(
 				[&]() {
-					// FlushNetDormancy();
+					for (auto PCIT = GetWorld()->GetPlayerControllerIterator(); PCIT; ++PCIT)
+					{
+						// 서버 PC들 중 다른 로컬에서 제어 중인 PC가 아닌 첫 PC = 서버 소유 PC
+						if (APlayerController* PC = PCIT->Get(); !PC->IsLocalPlayerController())
+						{
+							SetOwner(PC);
+							break;
+						}
+					}
 				}
 			), 5.0f, false
+		);
+	}
+	// 클라 코드
+	else
+	{
+		// Ownership 설정
+		// SetOwner(GetWorld()->GetFirstPlayerController()); // 클라이언트 로컬에서만 적용, 서버에선 등록안됨.
+		
+		FTimerHandle Handle;
+		GetWorldTimerManager().SetTimer(
+			Handle,
+			FTimerDelegate::CreateLambda(
+				[&]()
+				{
+					ServerRPCChangeLightColor();
+				}
+			), 1.0f, true
 		);
 	}
 }
@@ -149,6 +175,20 @@ void AABFountain::OnRep_ServerLightColor()
 	{
 		PointLight->SetLightColor(ServerLightColor);
 	}
+}
+
+void AABFountain::ServerRPCChangeLightColor_Implementation()
+{
+	const FLinearColor NewLightColor = FLinearColor(
+	FMath::RandRange(0.0f, 1.0f),
+	FMath::RandRange(0.0f, 1.0f),
+	FMath::RandRange(0.0f, 1.0f),
+	1.0f
+	);
+	
+	// 어떤 클라이언트에서 요청이 들어오면
+	// 서버는 무작위 색상을 바꾸는 RPC를 멀티캐스트로 쏨
+	MulticastRPCChangeLightColor(NewLightColor);
 }
 
 void AABFountain::MulticastRPCChangeLightColor_Implementation(const FLinearColor& NewLightColor)
