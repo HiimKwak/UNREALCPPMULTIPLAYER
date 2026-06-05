@@ -11,7 +11,12 @@
 #include "ArenaBattle.h"
 #include "UI/ABHUDWidget.h"
 #include "CharacterStat/ABCharacterStatComponent.h"
+#include "Components/CapsuleComponent.h"
+#include "Engine/DamageEvents.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "Interface/ABGameInterface.h"
+#include "Net/UnrealNetwork.h"
+#include "Physics/ABCollision.h"
 
 AABCharacterPlayer::AABCharacterPlayer()
 {
@@ -62,15 +67,19 @@ AABCharacterPlayer::AABCharacterPlayer()
 		AttackAction = InputActionAttackRef.Object;
 	}
 
-	CurrentCharacterControlType = ECharacterControlType::Quater;
+	CurrentCharacterControlType = ECharacterControlType::Quarter;
+	
+	bCanAttack = true;
+	// 액터 리플리케이션 활성화
+	bReplicates = true;
 }
 
 void AABCharacterPlayer::BeginPlay()
 {
+	AB_LOG(LogABNetwork, Log, TEXT("%s"), TEXT("Begin"));
 	Super::BeginPlay();
 
-	APlayerController* PlayerController = Cast<APlayerController>(GetController());
-	if (PlayerController)
+	if (APlayerController* PlayerController = Cast<APlayerController>(GetController()))
 	{
 		EnableInput(PlayerController);
 	}
@@ -82,8 +91,7 @@ void AABCharacterPlayer::SetDead()
 {
 	Super::SetDead();
 
-	APlayerController* PlayerController = Cast<APlayerController>(GetController());
-	if (PlayerController)
+	if (APlayerController* PlayerController = Cast<APlayerController>(GetController()))
 	{
 		DisableInput(PlayerController);
 	}
@@ -92,7 +100,7 @@ void AABCharacterPlayer::SetDead()
 void AABCharacterPlayer::PossessedBy(AController* NewController)
 {
 	AB_LOG(LogABNetwork, Log, TEXT("%s"), TEXT("Begin"));
-	AActor* OwnerActor = GetOwner();
+	const AActor* OwnerActor = GetOwner();
 	if (OwnerActor)
 	{
 		AB_LOG(LogABNetwork, Log, TEXT("Owner Actor: %s"), *OwnerActor->GetName());
@@ -114,6 +122,13 @@ void AABCharacterPlayer::PossessedBy(AController* NewController)
 	AB_LOG(LogABNetwork, Log, TEXT("%s"), TEXT("End"));
 }
 
+void AABCharacterPlayer::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+	
+	DOREPLIFETIME(AABCharacterPlayer, bCanAttack);
+}
+
 void AABCharacterPlayer::SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent)
 {
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
@@ -125,19 +140,19 @@ void AABCharacterPlayer::SetupPlayerInputComponent(class UInputComponent* Player
 	EnhancedInputComponent->BindAction(ChangeControlAction, ETriggerEvent::Triggered, this, &AABCharacterPlayer::ChangeCharacterControl);
 	EnhancedInputComponent->BindAction(ShoulderMoveAction, ETriggerEvent::Triggered, this, &AABCharacterPlayer::ShoulderMove);
 	EnhancedInputComponent->BindAction(ShoulderLookAction, ETriggerEvent::Triggered, this, &AABCharacterPlayer::ShoulderLook);
-	EnhancedInputComponent->BindAction(QuaterMoveAction, ETriggerEvent::Triggered, this, &AABCharacterPlayer::QuaterMove);
+	EnhancedInputComponent->BindAction(QuaterMoveAction, ETriggerEvent::Triggered, this, &AABCharacterPlayer::QuarterMove);
 	EnhancedInputComponent->BindAction(AttackAction, ETriggerEvent::Triggered, this, &AABCharacterPlayer::Attack);
 }
 
 void AABCharacterPlayer::ChangeCharacterControl()
 {
-	if (CurrentCharacterControlType == ECharacterControlType::Quater)
+	if (CurrentCharacterControlType == ECharacterControlType::Quarter)
 	{
 		SetCharacterControl(ECharacterControlType::Shoulder);
 	}
 	else if (CurrentCharacterControlType == ECharacterControlType::Shoulder)
 	{
-		SetCharacterControl(ECharacterControlType::Quater);
+		SetCharacterControl(ECharacterControlType::Quarter);
 	}
 }
 
@@ -157,8 +172,7 @@ void AABCharacterPlayer::SetCharacterControl(ECharacterControlType NewCharacterC
 	if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PlayerController->GetLocalPlayer()))
 	{
 		Subsystem->ClearAllMappings();
-		UInputMappingContext* NewMappingContext = NewCharacterControl->InputMappingContext;
-		if (NewMappingContext)
+		if (const UInputMappingContext* NewMappingContext = NewCharacterControl->InputMappingContext)
 		{
 			Subsystem->AddMappingContext(NewMappingContext, 0);
 		}
@@ -196,20 +210,19 @@ void AABCharacterPlayer::ShoulderMove(const FInputActionValue& Value)
 
 void AABCharacterPlayer::ShoulderLook(const FInputActionValue& Value)
 {
-	FVector2D LookAxisVector = Value.Get<FVector2D>();
+	const FVector2D LookAxisVector = Value.Get<FVector2D>();
 
 	AddControllerYawInput(LookAxisVector.X);
 	AddControllerPitchInput(LookAxisVector.Y);
 }
 
-void AABCharacterPlayer::QuaterMove(const FInputActionValue& Value)
+void AABCharacterPlayer::QuarterMove(const FInputActionValue& Value)
 {
 	FVector2D MovementVector = Value.Get<FVector2D>();
 
 	float InputSizeSquared = MovementVector.SquaredLength();
 	float MovementVectorSize = 1.0f;
-	float MovementVectorSizeSquared = MovementVector.SquaredLength();
-	if (MovementVectorSizeSquared > 1.0f)
+	if (float MovementVectorSizeSquared = MovementVector.SquaredLength(); MovementVectorSizeSquared > 1.0f)
 	{
 		MovementVector.Normalize();
 		MovementVectorSizeSquared = 1.0f;
@@ -219,14 +232,100 @@ void AABCharacterPlayer::QuaterMove(const FInputActionValue& Value)
 		MovementVectorSize = FMath::Sqrt(MovementVectorSizeSquared);
 	}
 
-	FVector MoveDirection = FVector(MovementVector.X, MovementVector.Y, 0.0f);
+	const FVector MoveDirection = FVector(MovementVector.X, MovementVector.Y, 0.0f);
 	GetController()->SetControlRotation(FRotationMatrix::MakeFromX(MoveDirection).Rotator());
 	AddMovementInput(MoveDirection, MovementVectorSize);
 }
 
 void AABCharacterPlayer::Attack()
 {
-	ProcessComboCommand();
+	// ProcessComboCommand();
+	
+	if (bCanAttack)
+	{
+		ServerRPCAttack();
+	}
+}
+
+void AABCharacterPlayer::AttackHitCheck()
+{
+	if (HasAuthority())
+	{
+		FHitResult OutHitResult;
+		const FCollisionQueryParams Params(SCENE_QUERY_STAT(Attack), false, this);
+
+		const float AttackRange = Stat->GetTotalStat().AttackRange;
+		const float AttackRadius = Stat->GetAttackRadius();
+		const float AttackDamage = Stat->GetTotalStat().Attack;
+		const FVector Start = GetActorLocation() + GetActorForwardVector() * GetCapsuleComponent()->GetScaledCapsuleRadius();
+		const FVector End = Start + GetActorForwardVector() * AttackRange;
+
+		const bool HitDetected = GetWorld()->SweepSingleByChannel(OutHitResult, Start, End, FQuat::Identity, CCHANNEL_ABACTION, FCollisionShape::MakeSphere(AttackRadius), Params);
+		if (HitDetected)
+		{
+			const FDamageEvent DamageEvent;
+			OutHitResult.GetActor()->TakeDamage(AttackDamage, DamageEvent, GetController(), this);
+		}
+
+#if ENABLE_DRAW_DEBUG
+
+		const FVector CapsuleOrigin = Start + (End - Start) * 0.5f;
+		const float CapsuleHalfHeight = AttackRange * 0.5f;
+		const FColor DrawColor = HitDetected ? FColor::Green : FColor::Red;
+
+		DrawDebugCapsule(GetWorld(), CapsuleOrigin, CapsuleHalfHeight, AttackRadius, FRotationMatrix::MakeFromZ(GetActorForwardVector()).ToQuat(), DrawColor, false, 5.0f);
+
+#endif
+	}
+}
+
+void AABCharacterPlayer::OnRep_CanAttack()
+{
+	if (!bCanAttack)
+	{
+		GetCharacterMovement()->SetMovementMode(EMovementMode::MOVE_None);
+	}
+	else
+	{
+		GetCharacterMovement()->SetMovementMode(EMovementMode::MOVE_Walking);
+	}
+}
+
+void AABCharacterPlayer::MulticastRPCAttack_Implementation()
+{
+	if (HasAuthority())
+	{
+		bCanAttack = false;
+		OnRep_CanAttack(); // 서버에선 직접 호출해야함
+		
+		FTimerHandle TimerHandle;
+		GetWorld()->GetTimerManager().SetTimer(
+			TimerHandle,
+			FTimerDelegate::CreateLambda(
+				[this]()
+				{
+					bCanAttack = true;
+					OnRep_CanAttack(); // 서버에선 직접 호출해야함
+				}
+			), 
+			AttackTime,
+			false
+		);
+	}
+	if (UAnimInstance* AnimInstance = GetMesh()->GetAnimInstance())
+	{
+		AnimInstance->Montage_Play(ComboActionMontage);
+	}
+}
+
+void AABCharacterPlayer::ServerRPCAttack_Implementation()
+{
+	MulticastRPCAttack();
+}
+
+bool AABCharacterPlayer::ServerRPCAttack_Validate()
+{
+	return true;
 }
 
 void AABCharacterPlayer::SetupHUDWidget(UABHUDWidget* InHUDWidget)

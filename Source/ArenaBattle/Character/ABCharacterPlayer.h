@@ -23,6 +23,7 @@ protected:
 	virtual void BeginPlay() override;
 	virtual void SetDead() override;
 	virtual void PossessedBy(AController* NewController) override;
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 	
 public:
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
@@ -64,11 +65,26 @@ protected:
 	void ShoulderMove(const FInputActionValue& Value);
 	void ShoulderLook(const FInputActionValue& Value);
 
-	void QuaterMove(const FInputActionValue& Value);
+	void QuarterMove(const FInputActionValue& Value);
 
 	ECharacterControlType CurrentCharacterControlType;
 
 	void Attack();
+	virtual void AttackHitCheck() override;
+	
+	UFUNCTION(Server, Reliable, WithValidation)
+	void ServerRPCAttack();
+	
+	UFUNCTION(NetMulticast, Reliable)
+	void MulticastRPCAttack();
+	
+	UFUNCTION()
+	void OnRep_CanAttack();
+	
+	UPROPERTY(ReplicatedUsing = OnRep_CanAttack)
+	uint8 bCanAttack : 1;
+	
+	float AttackTime = 1.4667f;
 
 // UI Section
 protected:

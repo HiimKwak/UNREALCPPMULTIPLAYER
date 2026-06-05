@@ -63,7 +63,7 @@ AABCharacterBase::AABCharacterBase()
 	static ConstructorHelpers::FObjectFinder<UABCharacterControlData> QuaterDataRef(TEXT("/Script/ArenaBattle.ABCharacterControlData'/Game/ArenaBattle/CharacterControl/ABC_Quater.ABC_Quater'"));
 	if (QuaterDataRef.Object)
 	{
-		CharacterControlManager.Add(ECharacterControlType::Quater, QuaterDataRef.Object);
+		CharacterControlManager.Add(ECharacterControlType::Quarter, QuaterDataRef.Object);
 	}
 
 	static ConstructorHelpers::FObjectFinder<UAnimMontage> ComboActionMontageRef(TEXT("/Script/Engine.AnimMontage'/Game/ArenaBattle/Animation/AM_ComboAttack.AM_ComboAttack'"));
