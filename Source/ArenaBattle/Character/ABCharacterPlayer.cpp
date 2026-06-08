@@ -9,6 +9,7 @@
 #include "EnhancedInputSubsystems.h"
 #include "ABCharacterControlData.h"
 #include "ArenaBattle.h"
+#include "EngineUtils.h"
 #include "UI/ABHUDWidget.h"
 #include "CharacterStat/ABCharacterStatComponent.h"
 #include "Components/CapsuleComponent.h"
@@ -366,6 +367,15 @@ void AABCharacterPlayer::DrawDebugAttackRange(const FColor& DrawColor, FVector T
 #endif
 }
 
+void AABCharacterPlayer::ClientRPCPlayAnimation_Implementation(AABCharacterPlayer* CharacterToPlay)
+{
+	AB_LOG(LogABNetwork, Log, TEXT("%s"), TEXT("Begin"));
+	if (CharacterToPlay)
+	{
+		CharacterToPlay->PlayAttackAnimation();
+	}
+}
+
 void AABCharacterPlayer::ServerRPCNotifyHit_Implementation(const FHitResult& HitResult, float HitCheckTime)
 {
 	// 충돌 정보로부터 액터 가져오기.
@@ -492,7 +502,19 @@ void AABCharacterPlayer::ServerRPCAttack_Implementation(float AttackStartTime)
 	LastAttackStartTime = AttackStartTime;
 	PlayAttackAnimation();
 	
-	MulticastRPCAttack();
+	for (APlayerController* PlayerController: TActorRange<APlayerController>(GetWorld()))
+	{
+		if (PlayerController && PlayerController != GetController())
+		{
+			if (!PlayerController->IsLocalController())
+			{
+				if (AABCharacterPlayer* OtherPlayer = Cast<AABCharacterPlayer>(PlayerController->GetPawn()))
+				{
+					OtherPlayer->ClientRPCPlayAnimation(this);
+				}
+			}
+		}
+	}
 }
 
 bool AABCharacterPlayer::ServerRPCAttack_Validate(float AttackStartTime)
