@@ -84,7 +84,7 @@ protected:
 	UFUNCTION(Server, Reliable, WithValidation)
 	void ServerRPCNotifyHit(const FHitResult& HitResult, float HitCheckTime);
 	UFUNCTION(Server, Reliable, WithValidation)
-	void ServerRPCNotifyMissed(FVector TraceStart, FVector TraceEnd, FVector TraceDir, float HitCheckTime);
+	void ServerRPCNotifyMissed(FVector_NetQuantize TraceStart, FVector_NetQuantize TraceEnd, FVector_NetQuantize TraceDir, float HitCheckTime);
 	
 	UFUNCTION()
 	void OnRep_CanAttack();

@@ -432,11 +432,11 @@ bool AABCharacterPlayer::ServerRPCNotifyHit_Validate(const FHitResult& HitResult
 	return (HitCheckTime - LastAttackStartTime) > AcceptMinCheckTime;
 }
 
-void AABCharacterPlayer::ServerRPCNotifyMissed_Implementation(FVector TraceStart, FVector TraceEnd, FVector TraceDir, float HitCheckTime)
+void AABCharacterPlayer::ServerRPCNotifyMissed_Implementation(FVector_NetQuantize TraceStart, FVector_NetQuantize TraceEnd, FVector_NetQuantize TraceDir, float HitCheckTime)
 {
 }
 
-bool AABCharacterPlayer::ServerRPCNotifyMissed_Validate(FVector TraceStart, FVector TraceEnd, FVector TraceDir, float HitCheckTime)
+bool AABCharacterPlayer::ServerRPCNotifyMissed_Validate(FVector_NetQuantize TraceStart, FVector_NetQuantize TraceEnd, FVector_NetQuantize TraceDir, float HitCheckTime)
 {
 	// 첫 공격인 경우에는 수락
 	if (LastAttackStartTime == 0.0f)
