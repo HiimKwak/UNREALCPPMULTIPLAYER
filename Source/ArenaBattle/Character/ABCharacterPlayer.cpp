@@ -14,6 +14,7 @@
 #include "Components/CapsuleComponent.h"
 #include "Engine/DamageEvents.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "GameFramework/GameStateBase.h"
 #include "Interface/ABGameInterface.h"
 #include "Net/UnrealNetwork.h"
 #include "Physics/ABCollision.h"
@@ -243,13 +244,41 @@ void AABCharacterPlayer::Attack()
 	
 	if (bCanAttack)
 	{
-		ServerRPCAttack();
+		if (!HasAuthority())
+		{
+			bCanAttack = false;
+			GetCharacterMovement()->SetMovementMode(EMovementMode::MOVE_None);
+			FTimerHandle Handle;
+			GetWorld()->GetTimerManager().SetTimer(
+				Handle,
+				FTimerDelegate::CreateLambda(
+					[&]()
+					{
+						bCanAttack = true;
+						GetCharacterMovement()->SetMovementMode(EMovementMode::MOVE_Walking);
+					}
+				),
+				AttackTime,
+				false
+			);
+			PlayAttackAnimation();
+		}
+		ServerRPCAttack(GetWorld()->GetGameState()->GetServerWorldTimeSeconds());
+	}
+}
+
+void AABCharacterPlayer::PlayAttackAnimation()
+{
+	if (UAnimInstance* AnimInstance = GetMesh()->GetAnimInstance())
+	{
+		AnimInstance->StopAllMontages(0.f);
+		AnimInstance->Montage_Play(ComboActionMontage);
 	}
 }
 
 void AABCharacterPlayer::AttackHitCheck()
 {
-	if (HasAuthority())
+	if (IsLocallyControlled())
 	{
 		FHitResult OutHitResult;
 		const FCollisionQueryParams Params(SCENE_QUERY_STAT(Attack), false, this);
@@ -257,26 +286,166 @@ void AABCharacterPlayer::AttackHitCheck()
 		const float AttackRange = Stat->GetTotalStat().AttackRange;
 		const float AttackRadius = Stat->GetAttackRadius();
 		const float AttackDamage = Stat->GetTotalStat().Attack;
+		const FVector Forward = GetActorForwardVector();
 		const FVector Start = GetActorLocation() + GetActorForwardVector() * GetCapsuleComponent()->GetScaledCapsuleRadius();
 		const FVector End = Start + GetActorForwardVector() * AttackRange;
 
-		const bool HitDetected = GetWorld()->SweepSingleByChannel(OutHitResult, Start, End, FQuat::Identity, CCHANNEL_ABACTION, FCollisionShape::MakeSphere(AttackRadius), Params);
-		if (HitDetected)
+		const bool HitDetected = GetWorld()->SweepSingleByChannel(
+			OutHitResult,
+			Start,
+			End,
+			FQuat::Identity,
+			CCHANNEL_ABACTION,
+			FCollisionShape::MakeSphere(AttackRadius), 
+			Params
+		);
+		float HitCheckTime = GetWorld()->GetGameState()->GetServerWorldTimeSeconds();
+		if (!HasAuthority())
 		{
-			const FDamageEvent DamageEvent;
-			OutHitResult.GetActor()->TakeDamage(AttackDamage, DamageEvent, GetController(), this);
+			if (HitDetected)
+			{
+				ServerRPCNotifyHit(OutHitResult, HitCheckTime);
+			}
+			else
+			{
+				ServerRPCNotifyMissed(Start, End, Forward, HitCheckTime);
+			}
 		}
+		else
+		{
+			FColor DebugColor = HitDetected ? FColor::Green : FColor::Red;
+			DrawDebugAttackRange(DebugColor, Start, End, Forward);
+			
+			if (HitDetected)
+			{
+				AttackHitConfirm(OutHitResult.GetActor());
+			}
+		}
+	}
+}
 
+void AABCharacterPlayer::AttackHitConfirm(AActor* HitActor)
+{
+	AB_LOG(LogABNetwork, Log, TEXT("%s"), TEXT("Begin"));
+	
+	if (HasAuthority())
+	{
+		const float AttackDamage = Stat->GetTotalStat().Attack;
+		const FDamageEvent DamageEvent;
+		
+		HitActor->TakeDamage(
+			AttackDamage,
+			DamageEvent,
+			GetController(),
+			this
+		);
+	}	
+}
+
+void AABCharacterPlayer::DrawDebugAttackRange(const FColor& DrawColor, FVector TraceStart, FVector TraceEnd, FVector Forward)
+{
 #if ENABLE_DRAW_DEBUG
 
-		const FVector CapsuleOrigin = Start + (End - Start) * 0.5f;
-		const float CapsuleHalfHeight = AttackRange * 0.5f;
-		const FColor DrawColor = HitDetected ? FColor::Green : FColor::Red;
+	const float AttackRange = Stat->GetTotalStat().AttackRange;
+	const float AttackRadius = Stat->GetAttackRadius();
 
-		DrawDebugCapsule(GetWorld(), CapsuleOrigin, CapsuleHalfHeight, AttackRadius, FRotationMatrix::MakeFromZ(GetActorForwardVector()).ToQuat(), DrawColor, false, 5.0f);
+	FVector CapsuleOrigin = TraceStart + (TraceEnd - TraceStart) * 0.5f;
+	float CapsuleHalfHeight = AttackRange * 0.5f;
+	//FColor DrawColor = HitDetected ? FColor::Green : FColor::Red;
 
+	DrawDebugCapsule(
+		GetWorld(),
+		CapsuleOrigin,
+		CapsuleHalfHeight,
+		AttackRadius,
+		FRotationMatrix::MakeFromZ(GetActorForwardVector()).ToQuat(),
+		DrawColor,
+		false,
+		5.0f
+	);
+#endif
+}
+
+void AABCharacterPlayer::ServerRPCNotifyHit_Implementation(const FHitResult& HitResult, float HitCheckTime)
+{
+	// 충돌 정보로부터 액터 가져오기.
+	AActor* HitActor = HitResult.GetActor();
+	if (IsValid(HitActor))
+	{
+		// 클라이언트로부터 받은 정보를 기반으로 처리는 하되,
+		// 검증은 진행.
+		// 거리 기반으로 검증.
+
+		// 맞은 위치.
+		const FVector HitLocation = HitResult.Location;
+
+		// 맞은 액터의 범위 가져오기.
+		// 캐릭터를 감싸는 박스 정보 가져오기.
+		// 캐릭터의 위치를 사용해도 됨.
+		const FBox HitBox = HitActor->GetComponentsBoundingBox();
+
+		// 바운딩 박스의 중심 위치.
+		const FVector ActorBoxCenter = HitBox.GetCenter();
+
+		// 거리 확인.
+		if (FVector::DistSquared(HitLocation, ActorBoxCenter)
+			<= AcceptCheckDistance * AcceptCheckDistance)
+		{
+			// 인정 -> 대미지 처리.
+			AttackHitConfirm(HitActor);
+		}
+		else
+		{
+			// 인정 안함.
+			AB_LOG(LogABNetwork, Warning, TEXT("%s"), TEXT("Hit Rejected!"));
+		}
+#if ENABLE_DRAW_DEBUG
+	DrawDebugPoint(
+		GetWorld(),
+		ActorBoxCenter,
+		50.f,
+		FColor::Cyan,
+		false,
+		5.f
+	);
+	DrawDebugPoint(
+		GetWorld(),
+		HitLocation,
+		50.f,
+		FColor::Magenta,
+		false,
+		5.f
+	);
 #endif
 	}
+}
+
+bool AABCharacterPlayer::ServerRPCNotifyHit_Validate(const FHitResult& HitResult, float HitCheckTime)
+{
+	// 첫 공격인 경우에는 수락
+	if (LastAttackStartTime == 0.0f)
+	{
+		return true;
+	}
+
+	// 이전에 공격한 시간 이후로, 이번에 공격을 시도한 시간까지의 경과 시간이 허용 가능한 시간보다 더 걸렸는지 판단
+	return (HitCheckTime - LastAttackStartTime) > AcceptMinCheckTime;
+}
+
+void AABCharacterPlayer::ServerRPCNotifyMissed_Implementation(FVector TraceStart, FVector TraceEnd, FVector TraceDir, float HitCheckTime)
+{
+}
+
+bool AABCharacterPlayer::ServerRPCNotifyMissed_Validate(FVector TraceStart, FVector TraceEnd, FVector TraceDir, float HitCheckTime)
+{
+	// 첫 공격인 경우에는 수락
+	if (LastAttackStartTime == 0.0f)
+	{
+		return true;
+	}
+
+	// 이전에 공격한 시간 이후로, 이번에 공격을 시도한 시간까지의 경과 시간이 허용 가능한 시간보다 더 걸렸는지 판단
+	return (HitCheckTime - LastAttackStartTime) > AcceptMinCheckTime;
 }
 
 void AABCharacterPlayer::OnRep_CanAttack()
@@ -293,39 +462,47 @@ void AABCharacterPlayer::OnRep_CanAttack()
 
 void AABCharacterPlayer::MulticastRPCAttack_Implementation()
 {
-	if (HasAuthority())
+	if (IsLocallyControlled())
 	{
-		bCanAttack = false;
-		OnRep_CanAttack(); // 서버에선 직접 호출해야함
-		
-		FTimerHandle TimerHandle;
-		GetWorld()->GetTimerManager().SetTimer(
-			TimerHandle,
-			FTimerDelegate::CreateLambda(
-				[this]()
-				{
-					bCanAttack = true;
-					OnRep_CanAttack(); // 서버에선 직접 호출해야함
-				}
-			), 
-			AttackTime,
-			false
-		);
+		return;
 	}
-	if (UAnimInstance* AnimInstance = GetMesh()->GetAnimInstance())
-	{
-		AnimInstance->Montage_Play(ComboActionMontage);
-	}
+	PlayAttackAnimation();
 }
 
-void AABCharacterPlayer::ServerRPCAttack_Implementation()
+void AABCharacterPlayer::ServerRPCAttack_Implementation(float AttackStartTime)
 {
+	bCanAttack = false;
+	OnRep_CanAttack();
+	
+	AttackTimeDifference = FMath::Clamp(GetWorld()->GetTimeSeconds() - AttackStartTime, 0.f, AttackTimeDifference);
+	FTimerHandle Handle;
+	GetWorld()->GetTimerManager().SetTimer(
+		Handle,
+		FTimerDelegate::CreateLambda(
+			[this]()	
+			{
+				bCanAttack = true;
+				OnRep_CanAttack();
+			}
+		),
+		AttackTime - AttackTimeDifference,
+		false
+	);
+	
+	LastAttackStartTime = AttackStartTime;
+	PlayAttackAnimation();
+	
 	MulticastRPCAttack();
 }
 
-bool AABCharacterPlayer::ServerRPCAttack_Validate()
+bool AABCharacterPlayer::ServerRPCAttack_Validate(float AttackStartTime)
 {
-	return true;
+	if (LastAttackStartTime == 0.f)
+	{
+		return true;
+	}
+	
+	return (AttackStartTime - LastAttackStartTime) > AttackTime;
 }
 
 void AABCharacterPlayer::SetupHUDWidget(UABHUDWidget* InHUDWidget)

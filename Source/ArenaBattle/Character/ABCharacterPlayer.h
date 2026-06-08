@@ -70,13 +70,21 @@ protected:
 	ECharacterControlType CurrentCharacterControlType;
 
 	void Attack();
+	void PlayAttackAnimation();
 	virtual void AttackHitCheck() override;
+	void AttackHitConfirm(AActor* HitActor);
+	void DrawDebugAttackRange(const FColor& DrawColor, FVector TraceStart, FVector TraceEnd, FVector Forward);
 	
 	UFUNCTION(Server, Reliable, WithValidation)
-	void ServerRPCAttack();
+	void ServerRPCAttack(float AttackStartTime);
 	
-	UFUNCTION(NetMulticast, Reliable)
+	UFUNCTION(NetMulticast, Unreliable)
 	void MulticastRPCAttack();
+	
+	UFUNCTION(Server, Reliable, WithValidation)
+	void ServerRPCNotifyHit(const FHitResult& HitResult, float HitCheckTime);
+	UFUNCTION(Server, Reliable, WithValidation)
+	void ServerRPCNotifyMissed(FVector TraceStart, FVector TraceEnd, FVector TraceDir, float HitCheckTime);
 	
 	UFUNCTION()
 	void OnRep_CanAttack();
@@ -85,6 +93,10 @@ protected:
 	uint8 bCanAttack : 1;
 	
 	float AttackTime = 1.4667f;
+	float LastAttackStartTime = 0.f;
+	float AttackTimeDifference = 0.f;
+	float AcceptCheckDistance = 300.0f;
+	float AcceptMinCheckTime = 0.15f;
 
 // UI Section
 protected:
